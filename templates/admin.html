@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block title %}Kelola Data · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<section class="kepala">
+  <div>
+    <p class="eyebrow">Panel admin · {{ session.user }}</p>
+    <h1>Kelola data dan model</h1>
+    <p class="sub">Urutan kerja: impor data harian tiga kota, latih model AutoGluon, lalu atur ambang peringatan bila perlu.</p>
+  </div>
+</section>
+
+<section class="stat-grid">
+  <div class="stat">
+    <span class="stat-label">Baris harga</span>
+    <span class="stat-angka">{{ info.n|ribuan }}</span>
+    <span class="stat-ket">{% if info.awal %}{{ info.awal|tgl }} – {{ info.akhir|tgl }}{% else %}belum ada data{% endif %}</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Kota terisi</span>
+    <span class="stat-angka">{{ info.jml_wilayah }} / {{ wilayah_list|length }}</span>
+    <span class="stat-ket">{{ komoditas_list|length }} komoditas</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">TimeSeriesPredictor</span>
+    <span class="stat-angka kecil">{{ run_p.status|capitalize if run_p else 'Belum dilatih' }}</span>
+    <span class="stat-ket">{{ run_p.selesai|waktu if run_p else '-' }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">TabularPredictor</span>
+    <span class="stat-angka kecil">{{ run_r.status|capitalize if run_r else 'Belum dilatih' }}</span>
+    <span class="stat-ket">{{ run_r.selesai|waktu if run_r else '-' }}</span>
+  </div>
+</section>
+
+<nav class="tab-nav" aria-label="Bagian panel admin">
+  <a href="#data">Data</a>
+  <a href="#model">Model AutoGluon</a>
+  <a href="#pengaturan">Pengaturan</a>
+  <a href="#riwayat">Riwayat</a>
+</nav>
+
+<!-- ================= DATA ================= -->
+<section id="data" class="tab-panel">
+  <div class="seksi">
+    <div class="seksi-kepala"><div><h2>Cakupan data per kota</h2><p>Pastikan setiap kota berisi data harian, sekitar 20 hari kerja per bulan. AutoGluon butuh minimal sekitar 60 hari data per kota-komoditas.</p></div></div>
+    <div class="tabel-wrap">
+      <table>
+        <thead><tr><th>Kota</th><th class="angka">Komoditas</th><th class="angka">Hari data</th><th class="angka">Baris</th><th>Rentang</th><th>Keterangan</th></tr></thead>
+        <tbody>
+          {% for c in cakupan %}
+            <tr>
+              <td>{{ c.wilayah }}</td>
+              <td class="angka">{{ c.komoditas or 0 }}</td>
+              <td class="angka">{{ c.hari or 0 }}</td>
+              <td class="angka">{{ (c.baris or 0)|ribuan }}</td>
+              <td>{% if c.awal %}{{ c.awal|tgl }} – {{ c.akhir|tgl }}{% else %}-{% endif %}</td>
+              <td>
+                {% if not c.hari %}<span class="lencana l-rawan">Belum diimpor</span>
+                {% elif c.hari < 60 %}<span class="lencana l-fluktuatif">Data kurang untuk AutoGluon</span>
+                {% else %}<span class="lencana l-stabil">Siap diproses</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="seksi">
+    <div class="seksi-kepala"><div><h2>Impor data harga</h2><p>Data dengan tanggal, kota, dan komoditas yang sama akan diperbarui, bukan digandakan.</p></div></div>
+    <form method="post" action="{{ url_for('impor') }}" enctype="multipart/form-data" class="kartu form-grid" data-proses="Mengimpor...">
+      <div class="field">
+        <label for="berkas">File CSV atau Excel</label>
+        <input id="berkas" type="file" name="berkas" accept=".csv,.xlsx,.xls" required>
+      </div>
+      <fieldset class="field">
+        <legend>Format file</legend>
+        <label class="radio"><input type="radio" name="format" value="pihps" checked> Tabel unduhan PIHPS (satu kota per file)</label>
+        <label class="radio"><input type="radio" name="format" value="panjang"> Template: tanggal, wilayah, komoditas, harga</label>
+      </fieldset>
+      <div class="field">
+        <label for="wilayah-impor">Kota (untuk file PIHPS)</label>
+        <select id="wilayah-impor" name="wilayah">
+          {% for w in wilayah_list %}<option>{{ w }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label class="label-check"><input type="checkbox" name="latih_ulang" value="1"> Latih ulang model AutoGluon setelah impor</label>
+      </div>
+      <div class="field tombol"><button class="btn" type="submit">Impor data</button></div>
+      <p class="catatan penuh-baris">Unduh data dari PIHPS dengan periode <strong>harian</strong>. File PIHPS tidak mencantumkan nama kota, jadi pastikan kota yang dipilih sesuai. <a href="{{ url_for('unduh_template') }}">Unduh template CSV</a>.</p>
+    </form>
+  </div>
+</section>
+
+<!-- ================= MODEL ================= -->
+<section id="model" class="tab-panel">
+  <div class="seksi dua-kolom">
+    <div class="kartu">
+      <h2>Latih model AutoGluon</h2>
+      <p class="catatan">Pelatihan berjalan di latar belakang. Kamu boleh membuka halaman lain selama proses berlangsung. Hasil lama tetap tampil sampai pelatihan baru selesai.</p>
+      <form method="post" action="{{ url_for('latih') }}" id="formLatih">
+        <fieldset class="field">
+          <legend>Model yang dilatih</legend>
+          <label class="radio"><input type="radio" name="bagian" value="semua" checked> Keduanya (disarankan)</label>
+          <label class="radio"><input type="radio" name="bagian" value="peramalan"> Hanya peramalan harga (TimeSeriesPredictor)</label>
+          <label class="radio"><input type="radio" name="bagian" value="risiko"> Hanya deteksi lonjakan (TabularPredictor)</label>
+        </fieldset>
+        <div class="field">
+          <label for="waktu">Batas waktu per model</label>
+          <select id="waktu" name="waktu">
+            {% for w in cfg.PILIHAN_WAKTU %}<option value="{{ w }}" {{ 'selected' if w == cfg.WAKTU_LATIH_PERAMALAN }}>{{ w // 60 }} menit{{ ' (disarankan)' if w == cfg.WAKTU_LATIH_PERAMALAN }}</option>{% endfor %}
+          </select>
+        </div>
+        <button class="btn" type="submit" {{ 'disabled' if st.status == 'berjalan' }}>{{ 'Sedang melatih...' if st.status == 'berjalan' else 'Latih model sekarang' }}</button>
+      </form>
+    </div>
+
+    <div class="kartu status-latih status-{{ st.status }}" id="statusLatih" data-url="{{ url_for('status_latih') }}" data-status="{{ st.status }}">
+      <h2>Status pelatihan</h2>
+      <div class="status-baris">
+        <span class="status-ikon" aria-hidden="true"></span>
+        <div>
+          <strong data-isi="judul">{{ {'siap': 'Belum ada pelatihan', 'berjalan': 'Sedang melatih', 'selesai': 'Pelatihan selesai', 'sebagian': 'Selesai sebagian', 'gagal': 'Pelatihan gagal'}.get(st.status, st.status) }}</strong>
+          <span class="catatan" data-isi="tahap">{{ st.tahap or '' }}</span>
+        </div>
+      </div>
+      <p class="catatan" data-isi="waktu">{% if st.mulai %}Dimulai {{ st.mulai|waktu }}{% if st.selesai %} · selesai {{ st.selesai|waktu }}{% endif %}{% endif %}</p>
+      <p class="pesan-status" data-isi="pesan" {{ 'hidden' if not st.pesan }}>{{ st.pesan or '' }}</p>
+      <details {{ 'open' if st.status in ('berjalan', 'gagal') }}>
+        <summary>Catatan proses</summary>
+        <pre class="log" data-isi="log">{{ log|join('\n') if log else 'Belum ada catatan.' }}</pre>
+      </details>
+      {% if st.status == 'berjalan' %}
+        <form method="post" action="{{ url_for('reset_latih') }}" class="jarak" onsubmit="return confirm('Hentikan atau reset status pelatihan?');">
+          <button class="btn btn-teks btn-kecil" type="submit">Hentikan / reset status</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="seksi dua-kolom">
+    {% for judul, run in [('TimeSeriesPredictor (peramalan)', run_p), ('TabularPredictor (deteksi lonjakan)', run_r)] %}
+      <div class="kartu">
+        <h2>{{ judul }}</h2>
+        {% if run %}
+          <p><span class="lencana {{ 'l-stabil' if run.status == 'selesai' else 'l-rawan' }}">{{ run.status }}</span> {{ run.selesai|waktu }} · {{ run.durasi|durasi }}</p>
+          <p class="catatan">{{ run.data.teks }}</p>
+          {% if run.data.bobot %}<p class="catatan">Ensemble: {% for m, b in run.data.bobot.items() %}{{ m }} {{ (b * 100)|round|int }}%{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+        {% else %}
+          <p class="catatan">Belum pernah dilatih.</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if komoditas_list %}
+  <div class="seksi">
+    <div class="seksi-kepala">
+      <div><h2>Hasil per kota-komoditas</h2><p>MAPE peramalan dan peluang naik terbaru. Detail lengkap ada di halaman <a href="{{ url_for('evaluasi') }}">Evaluasi Model</a>.</p></div>
+      <div class="filter-inline"><input type="search" placeholder="Cari komoditas..." data-cari="#tabelStatusModel" aria-label="Cari komoditas"></div>
+    </div>
+    <div class="tabel-wrap tabel-tinggi">
+      <table id="tabelStatusModel">
+        <thead>
+          <tr><th rowspan="2">Komoditas</th>{% for w in wilayah_list %}<th class="angka" colspan="2">{{ w }}</th>{% endfor %}</tr>
+          <tr>{% for w in wilayah_list %}<th class="angka">MAPE</th><th class="angka">Peluang</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for s in status_model %}
+            <tr>
+              <td>{{ s.komoditas }}</td>
+              {% for m in s.kota %}
+                <td class="angka"><span class="{{ 'ubah naik' if m.mape and m.mape >= 10 else '' }}">{{ m.mape|persen(false, 2) }}</span></td>
+                <td class="angka">{{ m.peluang|persen(false, 0) }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+<!-- ================= PENGATURAN ================= -->
+<section id="pengaturan" class="tab-panel">
+  <div class="seksi kartu teks">
+    <h2>Aturan peringatan dini</h2>
+    <p><span class="lencana l-rawan">Siaga</span> ramalan naik ≥ 2× ambang, atau peluang naik ≥ {{ cfg.PELUANG_SIAGA|int }}%. <span class="lencana l-fluktuatif">Waspada</span> ramalan naik ≥ ambang, atau peluang naik ≥ {{ cfg.PELUANG_WASPADA|int }}%.</p>
+    <p class="catatan">Batas peluang dan definisi lonjakan ({{ cfg.AMBANG_LONJAKAN|int }}% dalam {{ cfg.HORIZON }} hari) diatur di file <code>config.py</code>.</p>
+  </div>
+
+  {% if komoditas_list %}
+  <div class="seksi">
+    <div class="seksi-kepala"><div><h2>Ambang kenaikan ramalan per komoditas</h2><p>Persen kenaikan ramalan dibanding harga terakhir. Default {{ cfg.AMBANG_DEFAULT|int }}%.</p></div></div>
+    <form method="post" action="{{ url_for('simpan_ambang') }}">
+      <div class="tabel-wrap">
+        <table>
+          <thead><tr><th>Komoditas</th><th class="angka">Ambang kenaikan (%)</th></tr></thead>
+          <tbody>
+            {% for a in ambang %}
+              <tr>
+                <td>{{ a.komoditas }}<input type="hidden" name="komoditas" value="{{ a.komoditas }}"></td>
+                <td class="angka"><input class="input-kecil" type="number" name="persen" value="{{ a.persen }}" min="0.5" step="0.5" aria-label="Ambang {{ a.komoditas }}"></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="jarak"><button class="btn" type="submit">Simpan ambang</button></p>
+    </form>
+  </div>
+
+  <div class="seksi">
+    <div class="seksi-kepala"><div><h2>Hapus data satu komoditas</h2><p>Menghapus harga dan semua hasil model untuk komoditas tersebut.</p></div></div>
+    <form method="post" action="{{ url_for('hapus_komoditas') }}" class="kartu filter" onsubmit="return confirm('Hapus semua data komoditas ini?');">
+      <div class="field">
+        <label for="k-hapus">Komoditas</label>
+        <select id="k-hapus" name="komoditas">{% for k in komoditas_list %}<option>{{ k }}</option>{% endfor %}</select>
+      </div>
+      <div class="field tombol"><button class="btn btn-bahaya" type="submit">Hapus komoditas</button></div>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="seksi">
+    <div class="seksi-kepala"><div><h2>Kosongkan semua data</h2><p>Menghapus semua harga, hasil model, dan riwayat pelatihan, misalnya sebelum mengimpor ulang data harian. Akun admin tidak ikut terhapus.</p></div></div>
+    <form method="post" action="{{ url_for('kosongkan_data') }}" class="kartu filter zona-bahaya">
+      <div class="field">
+        <label for="konfirmasi">Ketik HAPUS untuk konfirmasi</label>
+        <input id="konfirmasi" type="text" name="konfirmasi" autocomplete="off" required>
+      </div>
+      <div class="field tombol"><button class="btn btn-bahaya" type="submit">Kosongkan data</button></div>
+    </form>
+  </div>
+</section>
+
+<!-- ================= RIWAYAT ================= -->
+<section id="riwayat" class="tab-panel">
+  <div class="seksi dua-kolom">
+    <div>
+      <div class="seksi-kepala"><div><h2>Riwayat impor</h2><p>10 impor terakhir.</p></div></div>
+      <div class="tabel-wrap">
+        <table>
+          <thead><tr><th>Waktu</th><th>File</th><th class="angka">Baris</th></tr></thead>
+          <tbody>
+            {% for l in log_impor %}
+              <tr><td>{{ l.dibuat|waktu }}</td><td>{{ l.nama_file }}</td><td class="angka">{{ l.jumlah_baris|ribuan }}</td></tr>
+            {% else %}
+              <tr><td colspan="3" class="catatan">Belum ada impor.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="seksi-kepala"><div><h2>Riwayat proses</h2><p>10 proses terakhir. Riwayat pelatihan lengkap ada di halaman <a href="{{ url_for('evaluasi') }}#riwayat">Evaluasi Model</a>.</p></div></div>
+      <div class="tabel-wrap">
+        <table>
+          <thead><tr><th>Waktu</th><th>Proses</th><th>Keterangan</th></tr></thead>
+          <tbody>
+            {% for l in log_proses %}
+              <tr><td>{{ l.dibuat|waktu }}</td><td>{{ l.jenis }}</td><td>{{ l.keterangan }}</td></tr>
+            {% else %}
+              <tr><td colspan="3" class="catatan">Belum ada proses.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
