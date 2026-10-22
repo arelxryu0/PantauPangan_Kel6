@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Peramalan · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<section class="kepala">
+  <div>
+    <p class="eyebrow">AutoGluon TimeSeriesPredictor</p>
+    <h1>Peramalan harga</h1>
+    <p class="sub">Perkiraan harga {{ cfg.HORIZON }} hari ke depan beserta rentang perkiraannya. AutoGluon melatih beberapa model deret waktu sekaligus, lalu menggabungkan yang terbaik menjadi satu model.</p>
+  </div>
+  <div class="aksi"><a class="btn btn-garis" href="{{ url_for('ekspor_peramalan') }}">Unduh CSV</a></div>
+</section>
+
+{% if not komoditas %}
+  <div class="kosong-besar"><p>Belum ada data harga untuk diramalkan.</p></div>
+{% else %}
+  <div class="kartu filter">
+    <form method="get" data-ajax class="field">
+      <input type="hidden" name="wilayah" value="{{ wilayah }}">
+      <label for="komoditas">Komoditas</label>
+      <select id="komoditas" name="komoditas">
+        {% for k in komoditas_list %}<option value="{{ k }}" {{ 'selected' if k == komoditas }}>{{ k }}</option>{% endfor %}
+      </select>
+      <noscript><button class="btn btn-kecil">Tampilkan</button></noscript>
+    </form>
+    <div class="field">
+      <span class="label-teks">Kota</span>
+      <div class="pilih-kota">
+        {% for w in wilayah_list %}
+          <a href="{{ url_dengan(wilayah=w) }}" class="{{ 'aktif' if w == wilayah }}" data-ajax>
+            <span class="titik-kota" style="background: {{ warna_kota(w) }}"></span>{{ w }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% if run %}
+      <div class="field info-model">
+        <span class="label-teks">Model</span>
+        <span>{{ run.model_terbaik }}{% if run.data.bobot %}: {% for m, b in run.data.bobot.items() %}{{ m }} {{ (b * 100)|round|int }}%{{ ', ' if not loop.last }}{% endfor %}{% endif %}</span>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if not pred %}
+    <div class="kosong-besar">
+      <p>Ramalan {{ komoditas }} untuk {{ wilayah }} belum tersedia. Admin bisa melatih model AutoGluon dari halaman Kelola Data, tab Model.</p>
+    </div>
+  {% else %}
+    <section class="stat-grid seksi">
+      <div class="stat">
+        <span class="stat-label">Status peringatan</span>
+        <span class="stat-angka"><span class="lencana besar {{ kelas_label(status.status) }}">{{ status.status }}</span></span>
+        <span class="stat-ket">{% if status.alasan %}{{ status.alasan|join('; ') }}{% else %}Kenaikan dan peluang naik di bawah ambang{% endif %}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Harga terakhir</span>
+        <span class="stat-angka">{{ evaluasi.harga_terakhir|rupiah }}</span>
+        <span class="stat-ket">{{ evaluasi.tanggal_terakhir|tgl }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Ramalan {{ akhir.tanggal|tgl }}</span>
+        <span class="stat-angka">{{ akhir.harga_prediksi|rupiah }}</span>
+        <span class="stat-ket">Rentang {{ akhir.bawah|rupiah }} – {{ akhir.atas|rupiah }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Peluang naik ≥ {{ cfg.AMBANG_LONJAKAN|int }}%</span>
+        <span class="stat-angka">{{ status.peluang|persen(false, 0) if status.peluang is not none else '-' }}</span>
+        <span class="stat-ket">Akurasi ramalan: MAPE {{ evaluasi.mape|persen(false, 2) }} · RMSE {{ evaluasi.rmse|rupiah }}</span>
+      </div>
+    </section>
+
+    <section class="seksi">
+      <div class="seksi-kepala">
+        <div>
+          <h2>Harga aktual dan ramalan</h2>
+          <p>60 hari terakhir {{ komoditas }} di {{ wilayah }}, dilanjutkan ramalan {{ cfg.HORIZON }} hari.</p>
+        </div>
+      </div>
+      <div class="kartu">
+        <div class="grafik"><canvas id="grafikRamal" data-jenis="ramal" data-sumber="data-grafikRamal" aria-label="Grafik harga aktual dan ramalan"></canvas></div>
+        <script type="application/json" id="data-grafikRamal">{{ grafik|tojson }}</script>
+        <p class="cara-baca"><strong>Cara membaca:</strong> garis hijau adalah harga asli, garis merah putus-putus adalah ramalan AutoGluon. Area merah muda adalah rentang kuantil 10%–90%: model memperkirakan harga sebenarnya 80% kemungkinan berada di dalam area ini. Area yang makin lebar berarti ramalan makin tidak pasti.</p>
+      </div>
+    </section>
+
+    <section class="seksi dua-kolom">
+      <div>
+        <div class="seksi-kepala"><div><h2>Ramalan per hari</h2><p>Nilai tengah dan rentang perkiraan.</p></div></div>
+        <div class="tabel-wrap">
+          <table>
+            <thead><tr><th>Tanggal</th><th class="angka">Ramalan</th><th class="angka">Rentang 10%–90%</th><th class="angka">Selisih</th></tr></thead>
+            <tbody>
+              {% for r in pred %}
+                {% set selisih = (r.harga_prediksi - evaluasi.harga_terakhir) / evaluasi.harga_terakhir * 100 %}
+                <tr>
+                  <td>{{ r.tanggal|tgl }}</td>
+                  <td class="angka sel-harga">{{ r.harga_prediksi|rupiah }}</td>
+                  <td class="angka catatan">{{ r.bawah|rupiah }} – {{ r.atas|rupiah }}</td>
+                  <td class="angka ubah {{ kelas_ubah(selisih) }}">{{ selisih|persen }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <div class="seksi-kepala"><div><h2>Uji model</h2><p>Ramalan dibanding harga asli pada {{ cfg.HORIZON }} hari terakhir yang disembunyikan saat pelatihan.</p></div></div>
+        <div class="kartu">
+          {% if grafik_uji.label %}
+            <div class="grafik kecil"><canvas id="grafikUji" data-jenis="uji" data-sumber="data-grafikUji" aria-label="Grafik pengujian model"></canvas></div>
+            <script type="application/json" id="data-grafikUji">{{ grafik_uji|tojson }}</script>
+            <p class="cara-baca">Makin berdempetan dua garis ini, makin akurat modelnya. MAPE {{ evaluasi.mape|persen(false, 2) }} berarti ramalan rata-rata meleset {{ evaluasi.mape|persen(false, 2) }} dari harga asli.</p>
+          {% else %}
+            <p class="catatan">Data uji belum tersedia.</p>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="seksi">
+    <div class="seksi-kepala">
+      <div>
+        <h2>{{ komoditas }} di tiga kota</h2>
+        <p>Ringkasan ramalan dan peluang naik untuk setiap kota. Klik nama kota untuk melihat detailnya.</p>
+      </div>
+    </div>
+    <div class="tabel-wrap">
+      <table>
+        <thead><tr><th>Kota</th><th>Status</th><th class="angka">Harga terakhir</th><th class="angka">Ramalan tertinggi</th>
+          <th class="angka">Kenaikan</th><th class="angka">Peluang naik</th><th class="angka">MAPE</th></tr></thead>
+        <tbody>
+          {% for p in perbandingan %}
+            <tr class="{{ 'baris-aktif' if p.wilayah == wilayah }}">
+              <td><a href="{{ url_dengan(wilayah=p.wilayah) }}" data-ajax>{{ p.wilayah }}</a></td>
+              {% if p.status %}
+                <td><span class="lencana {{ kelas_label(p.status) }}">{{ p.status }}</span></td>
+                <td class="angka">{{ p.harga_terakhir|rupiah }}</td>
+                <td class="angka">{{ p.prediksi_maks|rupiah }}</td>
+                <td class="angka ubah {{ kelas_ubah(p.kenaikan) }}">{{ p.kenaikan|persen }}</td>
+                <td class="angka">{{ p.peluang|persen(false, 0) }}</td>
+                <td class="angka">{{ p.mape|persen(false, 2) }}</td>
+              {% else %}
+                <td colspan="6" class="catatan">Belum diramalkan</td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

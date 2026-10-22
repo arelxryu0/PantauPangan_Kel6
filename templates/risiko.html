@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Risiko Kenaikan · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<section class="kepala">
+  <div>
+    <p class="eyebrow">AutoGluon TabularPredictor</p>
+    <h1>Risiko kenaikan harga</h1>
+    <p class="sub">Peluang harga setiap komoditas di setiap kota naik {{ cfg.AMBANG_LONJAKAN|int }}% atau lebih dalam {{ cfg.HORIZON }} hari ke depan, dihitung dengan klasifikasi biner AutoGluon dari pola perubahan harga, volatilitas, kota, dan jenis komoditas.</p>
+  </div>
+  {% if semua %}<div class="aksi"><a class="btn btn-garis" href="{{ url_for('ekspor_risiko') }}">Unduh CSV</a></div>{% endif %}
+</section>
+
+{% if not semua %}
+  <div class="kosong-besar">
+    <p>Model deteksi lonjakan belum dilatih. Admin bisa melatihnya dari halaman Kelola Data, tab Model.</p>
+  </div>
+{% else %}
+  <section class="stat-grid">
+    {% for kat, ket in [('Tinggi', '≥ ' ~ cfg.PELUANG_SIAGA|int ~ '%'), ('Sedang', cfg.PELUANG_WASPADA|int ~ '–' ~ cfg.PELUANG_SIAGA|int ~ '%'), ('Rendah', '< ' ~ cfg.PELUANG_WASPADA|int ~ '%')] %}
+      <a class="stat stat-link profil {{ kelas_label(kat) }}-garis {{ 'terpilih' if kat == kategori }}" href="{{ url_dengan(kategori='' if kat == kategori else kat) }}#rincian" data-ajax data-gulir="#rincian">
+        <span class="lencana {{ kelas_label(kat) }}">Risiko {{ kat|lower }}</span>
+        <span class="stat-angka">{{ jumlah[kat] }}</span>
+        <span class="stat-ket">kota-komoditas dengan peluang {{ ket }}</span>
+      </a>
+    {% endfor %}
+    <div class="stat">
+      <span class="stat-label">Model terbaik</span>
+      <span class="stat-angka kecil">{{ run.model_terbaik if run else '-' }}</span>
+      <span class="stat-ket">{% if run %}Balanced accuracy {{ run.data.metrik.balanced_accuracy|angka }} · dilatih {{ run.selesai|waktu }}{% endif %}</span>
+    </div>
+  </section>
+
+  <section class="seksi">
+    <div class="seksi-kepala">
+      <div>
+        <h2>Peta risiko per kota</h2>
+        <p>Peluang naik setiap komoditas di Pekanbaru, Dumai, dan Tembilahan. Warna makin merah berarti peluang naik makin besar.</p>
+      </div>
+      <div class="legenda">
+        <span><i class="sel-aman"></i>&lt; {{ (cfg.PELUANG_WASPADA / 2)|int }}%</span>
+        <span><i class="sel-rendah"></i>{{ (cfg.PELUANG_WASPADA / 2)|int }}–{{ cfg.PELUANG_WASPADA|int }}%</span>
+        <span><i class="sel-sedang"></i>{{ cfg.PELUANG_WASPADA|int }}–{{ cfg.PELUANG_SIAGA|int }}%</span>
+        <span><i class="sel-tinggi"></i>≥ {{ cfg.PELUANG_SIAGA|int }}%</span>
+      </div>
+    </div>
+    <div class="tabel-wrap">
+      <table class="peta">
+        <thead><tr><th>Komoditas</th>{% for w in wilayah_list %}<th class="angka">{{ w }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for m in matriks %}
+            <tr>
+              <td>{{ m.komoditas }}</td>
+              {% for p in m.peluang %}
+                <td class="angka sel-peta {{ kelas_peluang(p) }}">
+                  {% if p is not none %}<a href="{{ url_for('peramalan', komoditas=m.komoditas, wilayah=wilayah_list[loop.index0]) }}">{{ p|persen(false, 0) }}</a>{% else %}-{% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="seksi dua-kolom">
+    <div>
+      <div class="seksi-kepala"><div><h2>15 peluang naik tertinggi</h2><p>Kota-komoditas yang paling perlu diawasi minggu ini.</p></div></div>
+      <div class="kartu">
+        <div class="grafik tinggi"><canvas data-jenis="batang-h" data-sumber="data-teratas" aria-label="Grafik peluang naik tertinggi"></canvas></div>
+        <script type="application/json" id="data-teratas">{{ grafik_teratas|tojson }}</script>
+      </div>
+    </div>
+    <div>
+      <div class="seksi-kepala"><div><h2>Faktor paling berpengaruh</h2><p>Feature importance dari model terbaik.</p></div></div>
+      <div class="kartu">
+        {% if grafik_fitur %}
+          <div class="grafik tinggi"><canvas data-jenis="batang-h" data-sumber="data-fitur" aria-label="Grafik fitur paling berpengaruh"></canvas></div>
+          <script type="application/json" id="data-fitur">{{ grafik_fitur|tojson }}</script>
+          <p class="cara-baca">Makin panjang batangnya, makin besar penurunan akurasi model jika informasi itu diacak. Artinya, faktor tersebut makin penting untuk menebak lonjakan harga.</p>
+        {% else %}
+          <p class="catatan">Data fitur penting belum tersedia.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="seksi" id="rincian">
+    <div class="seksi-kepala">
+      <div>
+        <h2>Rincian peluang naik</h2>
+        <p>Kondisi harga terakhir yang dipakai model untuk menghitung peluang.</p>
+      </div>
+      <form class="filter-inline" method="get" data-ajax>
+        {% if kategori %}<input type="hidden" name="kategori" value="{{ kategori }}">{% endif %}
+        <select name="kota" aria-label="Filter kota">
+          <option value="">Semua kota</option>
+          {% for w in wilayah_list %}<option {{ 'selected' if w == kota }}>{{ w }}</option>{% endfor %}
+        </select>
+        <select name="komoditas" aria-label="Filter komoditas">
+          <option value="">Semua komoditas</option>
+          {% for k in komoditas_list %}<option value="{{ k }}" {{ 'selected' if k == komoditas }}>{{ k }}</option>{% endfor %}
+        </select>
+        <noscript><button class="btn btn-kecil">Saring</button></noscript>
+      </form>
+    </div>
+    <div class="tabel-wrap tabel-tinggi">
+      <table>
+        <thead><tr><th>Risiko</th><th>Komoditas</th><th>Kota</th><th class="angka">Harga</th><th class="angka">Peluang naik</th>
+          <th class="angka">7 hari</th><th class="angka">30 hari</th><th class="angka">Volatilitas 30 hari</th></tr></thead>
+        <tbody>
+          {% for r in hasil %}
+            <tr>
+              <td><span class="lencana {{ kelas_label(r.kategori) }}">{{ r.kategori }}</span></td>
+              <td><a href="{{ url_for('peramalan', komoditas=r.komoditas, wilayah=r.wilayah) }}">{{ r.komoditas }}</a></td>
+              <td>{{ r.wilayah }}</td>
+              <td class="angka">{{ r.harga|rupiah }}</td>
+              <td class="angka"><span class="meter"><span class="meter-isi {{ kelas_peluang(r.peluang) }}" style="width: {{ r.peluang|round(0) }}%"></span></span><strong>{{ r.peluang|persen(false) }}</strong></td>
+              <td class="angka ubah {{ kelas_ubah(r.ubah_7h) }}">{{ r.ubah_7h|persen }}</td>
+              <td class="angka ubah {{ kelas_ubah(r.ubah_30h) }}">{{ r.ubah_30h|persen }}</td>
+              <td class="angka">{{ r.volatilitas_30h|persen(false, 2) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8">Tidak ada hasil untuk filter ini.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Peringatan Dini · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<section class="kepala">
+  <div>
+    <p class="eyebrow">Gabungan dua model AutoGluon</p>
+    <h1>Peringatan dini</h1>
+    <p class="sub">Status ditentukan dari dua hasil sekaligus: kenaikan harga hasil ramalan TimeSeriesPredictor dan peluang naik dari TabularPredictor. Status yang dipakai adalah yang paling tinggi di antara keduanya.</p>
+  </div>
+  {% if total %}<div class="aksi"><a class="btn btn-garis" href="{{ url_for('ekspor_peringatan') }}">Unduh CSV</a></div>{% endif %}
+</section>
+
+<section class="kartu aturan">
+  <div><span class="lencana l-rawan">Siaga</span> ramalan naik ≥ 2× ambang, <em>atau</em> peluang naik ≥ {{ cfg.PELUANG_SIAGA|int }}%</div>
+  <div><span class="lencana l-fluktuatif">Waspada</span> ramalan naik ≥ ambang, <em>atau</em> peluang naik ≥ {{ cfg.PELUANG_WASPADA|int }}%</div>
+  <div><span class="lencana l-stabil">Aman</span> keduanya di bawah batas</div>
+  <p class="catatan">Ambang kenaikan default {{ cfg.AMBANG_DEFAULT|int }}% dan bisa diatur admin per komoditas.</p>
+</section>
+
+{% if not total %}
+  <div class="kosong-besar"><p>Belum ada hasil model. Peringatan muncul setelah admin melatih model AutoGluon.</p></div>
+{% else %}
+  <section class="stat-grid seksi">
+    {% for s in status_list %}
+      <a class="stat stat-link {{ 'terpilih' if s == status }}" href="{{ url_dengan(status='' if s == status else s) }}" data-ajax>
+        <span class="lencana {{ kelas_label(s) }}">{{ s }}</span>
+        <span class="stat-angka">{{ jumlah[s] }}</span>
+        <span class="stat-ket">{{ 'Klik lagi untuk melihat semua' if s == status else 'Klik untuk menyaring' }}</span>
+      </a>
+    {% endfor %}
+    <div class="stat">
+      <span class="stat-label">Per kota (siaga / waspada)</span>
+      {% for k, j in per_kota.items() %}
+        <span class="stat-ket"><span class="titik-kota" style="background: {{ warna_kota(k) }}"></span> {{ k }}: <strong>{{ j['Siaga'] }}</strong> / <strong>{{ j['Waspada'] }}</strong></span>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="seksi">
+    <div class="seksi-kepala">
+      <div>
+        <h2>Daftar peringatan</h2>
+        <p>Diurutkan dari status paling rawan, lalu peluang naik terbesar.</p>
+      </div>
+      <form class="filter-inline" method="get" data-ajax>
+        {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+        <select name="wilayah" aria-label="Filter kota">
+          <option value="">Semua kota</option>
+          {% for w in wilayah_list %}<option {{ 'selected' if w == wilayah }}>{{ w }}</option>{% endfor %}
+        </select>
+        <select name="komoditas" aria-label="Filter komoditas">
+          <option value="">Semua komoditas</option>
+          {% for k in komoditas_list %}<option value="{{ k }}" {{ 'selected' if k == komoditas }}>{{ k }}</option>{% endfor %}
+        </select>
+        <noscript><button class="btn btn-kecil">Saring</button></noscript>
+      </form>
+    </div>
+    <div class="tabel-wrap">
+      <table>
+        <thead>
+          <tr><th>Status</th><th>Komoditas</th><th>Kota</th><th class="angka">Harga terakhir</th>
+              <th class="angka">Ramalan tertinggi</th><th class="angka">Kenaikan</th><th class="angka">Peluang naik</th><th>Alasan</th></tr>
+        </thead>
+        <tbody>
+          {% for d in data %}
+            <tr>
+              <td><span class="lencana {{ kelas_label(d.status) }}">{{ d.status }}</span></td>
+              <td><a href="{{ url_for('peramalan', komoditas=d.komoditas, wilayah=d.wilayah) }}">{{ d.komoditas }}</a></td>
+              <td>{{ d.wilayah }}</td>
+              <td class="angka">{{ d.harga_terakhir|rupiah }}</td>
+              <td class="angka">{{ d.prediksi_maks|rupiah }}</td>
+              <td class="angka ubah {{ kelas_ubah(d.kenaikan) }}">{{ d.kenaikan|persen }}</td>
+              <td class="angka">{{ d.peluang|persen(false, 0) }}</td>
+              <td class="catatan">{{ d.alasan|join('; ') if d.alasan else '-' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8">Tidak ada data untuk filter ini.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

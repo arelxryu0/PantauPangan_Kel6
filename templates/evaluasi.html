@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}Evaluasi Model · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<section class="kepala">
+  <div>
+    <p class="eyebrow">Hasil pengujian AutoGluon</p>
+    <h1>Evaluasi model</h1>
+    <p class="sub">Seberapa akurat kedua model AutoGluon saat diuji dengan data yang tidak pernah dilihat selama pelatihan. Semua angka di halaman ini dihitung ulang setiap kali model dilatih.</p>
+  </div>
+  {% if per_item %}<div class="aksi"><a class="btn btn-garis" href="{{ url_for('ekspor_evaluasi') }}">Unduh akurasi CSV</a></div>{% endif %}
+</section>
+
+<nav class="tab-nav" aria-label="Bagian evaluasi">
+  <a href="#peramalan">Peramalan harga</a>
+  <a href="#lonjakan">Deteksi lonjakan</a>
+  <a href="#riwayat">Riwayat pelatihan</a>
+</nav>
+
+<!-- ================= PERAMALAN ================= -->
+<section id="peramalan" class="tab-panel">
+  {% if not run_p %}
+    <div class="kosong-besar"><p>Model peramalan belum dilatih.</p></div>
+  {% else %}
+    {% set r = run_p.data.ringkas %}
+    <section class="stat-grid seksi">
+      <div class="stat">
+        <span class="stat-label">Model terbaik</span>
+        <span class="stat-angka kecil">{{ run_p.model_terbaik }}</span>
+        <span class="stat-ket">{% for m, b in run_p.data.bobot.items() %}{{ m }} {{ (b * 100)|round|int }}%{{ ', ' if not loop.last }}{% else %}model tunggal{% endfor %}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">MAPE median</span>
+        <span class="stat-angka">{{ r.mape_median|persen(false, 2) }}</span>
+        <span class="stat-ket">rata-rata {{ r.mape_rata|persen(false, 2) }} dari {{ r.jumlah_deret }} kota-komoditas</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Akurat (MAPE &lt; 10%)</span>
+        <span class="stat-angka">{{ r.persen_di_bawah_10|persen(false) }}</span>
+        <span class="stat-ket">dari seluruh kota-komoditas</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Pelatihan</span>
+        <span class="stat-angka kecil">{{ run_p.durasi|durasi }}</span>
+        <span class="stat-ket">preset {{ r.preset }}, data {{ r.awal|tgl }} – {{ r.akhir|tgl }}</span>
+      </div>
+    </section>
+
+    <section class="seksi dua-kolom">
+      <div>
+        <div class="seksi-kepala"><div><h2>Perbandingan model</h2><p>MAPE setiap model pada {{ r.horizon }} hari data uji. Makin pendek makin akurat.</p></div></div>
+        <div class="kartu">
+          <div class="grafik"><canvas data-jenis="batang-h" data-sumber="data-model" aria-label="Grafik MAPE per model"></canvas></div>
+          <script type="application/json" id="data-model">{{ grafik_model|tojson }}</script>
+          <p class="cara-baca">Batang kuning adalah model yang dipilih AutoGluon berdasarkan skor validasi.</p>
+        </div>
+      </div>
+      <div>
+        <div class="seksi-kepala"><div><h2>Leaderboard</h2><p>Hasil asli dari <code>predictor.leaderboard()</code>.</p></div></div>
+        <div class="tabel-wrap">
+          <table>
+            <thead><tr><th>Model</th><th class="angka">MAPE uji</th><th class="angka">MAPE validasi</th><th class="angka">Waktu latih</th></tr></thead>
+            <tbody>
+              {% for x in run_p.data.leaderboard %}
+                <tr class="{{ 'baris-aktif' if x.model == run_p.model_terbaik }}">
+                  <td>{{ x.model }}</td>
+                  <td class="angka">{{ x.mape_uji|persen(false, 2) }}</td>
+                  <td class="angka">{{ x.mape_val|persen(false, 2) }}</td>
+                  <td class="angka">{{ x.waktu_latih|angka(2) }} dtk</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="seksi">
+      <div class="seksi-kepala"><div><h2>MAPE rata-rata per komoditas</h2><p>Komoditas yang harganya bergejolak, seperti cabai, lebih sulit diramal.</p></div></div>
+      <div class="kartu">
+        <div class="grafik tinggi"><canvas data-jenis="batang-h" data-sumber="data-komoditas" aria-label="Grafik MAPE per komoditas"></canvas></div>
+        <script type="application/json" id="data-komoditas">{{ grafik_komoditas|tojson }}</script>
+        <p class="cara-baca">Hijau: MAPE di bawah 5% (sangat akurat). Kuning: 5–10% (akurat). Merah: 10% atau lebih.</p>
+      </div>
+    </section>
+
+    <section class="seksi">
+      <div class="seksi-kepala">
+        <div><h2>Akurasi per kota-komoditas</h2><p>Diurutkan dari yang paling sulit diramal.</p></div>
+        <div class="filter-inline"><input type="search" placeholder="Cari komoditas..." data-cari="#tabelMape" aria-label="Cari komoditas"></div>
+      </div>
+      <div class="tabel-wrap tabel-tinggi">
+        <table id="tabelMape">
+          <thead><tr><th>Komoditas</th><th>Kota</th><th class="angka">MAPE</th><th class="angka">RMSE</th><th class="angka">Harga terakhir</th></tr></thead>
+          <tbody>
+            {% for p in per_item %}
+              <tr>
+                <td><a href="{{ url_for('peramalan', komoditas=p.komoditas, wilayah=p.wilayah) }}">{{ p.komoditas }}</a></td>
+                <td>{{ p.wilayah }}</td>
+                <td class="angka"><span class="{{ 'ubah naik' if p.mape >= 10 else '' }}">{{ p.mape|persen(false, 2) }}</span></td>
+                <td class="angka">{{ p.rmse|rupiah }}</td>
+                <td class="angka">{{ p.harga_terakhir|rupiah }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+</section>
+
+<!-- ================= DETEKSI LONJAKAN ================= -->
+<section id="lonjakan" class="tab-panel">
+  {% if not run_r %}
+    <div class="kosong-besar"><p>Model deteksi lonjakan belum dilatih.</p></div>
+  {% else %}
+    {% set m = run_r.data.metrik %}{% set cm = run_r.data.confusion %}
+    <section class="stat-grid seksi">
+      <div class="stat">
+        <span class="stat-label">Model terbaik</span>
+        <span class="stat-angka kecil">{{ run_r.model_terbaik }}</span>
+        <span class="stat-ket">{% for nm, b in run_r.data.bobot.items() %}{{ nm }} {{ (b * 100)|round|int }}%{{ ', ' if not loop.last }}{% else %}model tunggal{% endfor %}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Balanced accuracy</span>
+        <span class="stat-angka">{{ m.balanced_accuracy|angka }}</span>
+        <span class="stat-ket">0,5 = menebak asal, 1 = sempurna</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">ROC AUC</span>
+        <span class="stat-angka">{{ m.roc_auc|angka }}</span>
+        <span class="stat-ket">kemampuan membedakan naik dan tidak naik</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Recall kejadian naik</span>
+        <span class="stat-angka">{{ (m.recall * 100)|persen(false) }}</span>
+        <span class="stat-ket">{{ cm.tp }} dari {{ cm.tp + cm.fn }} lonjakan tertangkap</span>
+      </div>
+    </section>
+
+    <section class="seksi dua-kolom">
+      <div>
+        <div class="seksi-kepala"><div><h2>Confusion matrix</h2><p>Tebakan model dibanding kejadian sebenarnya pada data uji.</p></div></div>
+        <div class="kartu">
+          <div class="cm">
+            <span></span><span class="cm-judul">Tebak: tidak naik</span><span class="cm-judul">Tebak: naik</span>
+            <span class="cm-judul kiri">Asli: tidak naik</span>
+            <span class="cm-sel benar"><strong>{{ cm.tn|ribuan }}</strong>Benar tidak naik</span>
+            <span class="cm-sel salah"><strong>{{ cm.fp|ribuan }}</strong>Alarm palsu</span>
+            <span class="cm-judul kiri">Asli: naik</span>
+            <span class="cm-sel salah berat"><strong>{{ cm.fn|ribuan }}</strong>Terlewat</span>
+            <span class="cm-sel benar"><strong>{{ cm.tp|ribuan }}</strong>Lonjakan tertangkap</span>
+          </div>
+          <p class="cara-baca">Untuk peringatan dini, kotak <strong>Terlewat</strong> paling penting dijaga tetap kecil, karena lonjakan yang tidak terdeteksi lebih merugikan daripada alarm palsu.</p>
+        </div>
+      </div>
+      <div>
+        <div class="seksi-kepala"><div><h2>Metrik lengkap</h2><p>Hasil <code>predictor.evaluate()</code> pada data uji.</p></div></div>
+        <div class="tabel-wrap">
+          <table>
+            <tbody>
+              {% for nama, ket in [('balanced_accuracy', 'Balanced accuracy'), ('accuracy', 'Accuracy'), ('precision', 'Precision (ketepatan alarm)'), ('recall', 'Recall (lonjakan tertangkap)'), ('f1', 'F1-score'), ('roc_auc', 'ROC AUC'), ('mcc', 'Matthews correlation (MCC)')] %}
+                <tr><td>{{ ket }}</td><td class="angka sel-harga">{{ m[nama]|angka }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="tabel-wrap jarak">
+          <table>
+            <thead><tr><th>Data</th><th class="angka">Baris</th><th class="angka">Kejadian naik</th><th>Periode</th></tr></thead>
+            <tbody>
+              {% for b in run_r.data.pembagian %}
+                <tr><td>{{ b.nama }}</td><td class="angka">{{ b.baris|ribuan }}</td><td class="angka">{{ b.naik|ribuan }} ({{ b.persen|persen(false) }})</td><td>{{ b.awal|tgl }} – {{ b.akhir|tgl }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="seksi dua-kolom">
+      <div>
+        <div class="seksi-kepala"><div><h2>Perbandingan model</h2><p>Balanced accuracy setiap model pada data uji. Makin panjang makin baik.</p></div></div>
+        <div class="kartu">
+          <div class="grafik tinggi"><canvas data-jenis="batang-h" data-sumber="data-skor" aria-label="Grafik skor per model"></canvas></div>
+          <script type="application/json" id="data-skor">{{ grafik_skor|tojson }}</script>
+        </div>
+      </div>
+      <div>
+        <div class="seksi-kepala"><div><h2>Faktor paling berpengaruh</h2><p>Permutation feature importance.</p></div></div>
+        <div class="kartu">
+          {% if grafik_fitur %}
+            <div class="grafik tinggi"><canvas data-jenis="batang-h" data-sumber="data-fitur" aria-label="Grafik fitur penting"></canvas></div>
+            <script type="application/json" id="data-fitur">{{ grafik_fitur|tojson }}</script>
+          {% else %}<p class="catatan">Belum tersedia.</p>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="seksi">
+      <div class="seksi-kepala"><div><h2>Leaderboard</h2><p>Hasil asli dari <code>predictor.leaderboard()</code>.</p></div></div>
+      <div class="tabel-wrap">
+        <table>
+          <thead><tr><th>Model</th><th class="angka">Skor uji</th><th class="angka">Skor validasi</th><th class="angka">Waktu latih</th></tr></thead>
+          <tbody>
+            {% for x in run_r.data.leaderboard %}
+              <tr class="{{ 'baris-aktif' if x.model == run_r.model_terbaik }}">
+                <td>{{ x.model }}</td><td class="angka">{{ x.skor_uji|angka(4) }}</td><td class="angka">{{ x.skor_val|angka(4) }}</td><td class="angka">{{ x.waktu_latih|angka(2) }} dtk</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+</section>
+
+<!-- ================= RIWAYAT ================= -->
+<section id="riwayat" class="tab-panel">
+  <section class="seksi">
+    <div class="seksi-kepala"><div><h2>Riwayat pelatihan</h2><p>15 pelatihan model terakhir.</p></div></div>
+    <div class="tabel-wrap">
+      <table>
+        <thead><tr><th>Waktu</th><th>Model</th><th>Status</th><th class="angka">Durasi</th><th>Keterangan</th></tr></thead>
+        <tbody>
+          {% for r in riwayat %}
+            <tr>
+              <td>{{ r.mulai|waktu }}</td>
+              <td>{{ 'TimeSeriesPredictor' if r.jenis == 'peramalan' else 'TabularPredictor' }}</td>
+              <td><span class="lencana {{ 'l-stabil' if r.status == 'selesai' else 'l-rawan' }}">{{ r.status }}</span></td>
+              <td class="angka">{{ r.durasi|durasi }}</td>
+              <td class="catatan">{{ r.teks or '-' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="catatan">Belum ada pelatihan.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>
+{% endblock %}
