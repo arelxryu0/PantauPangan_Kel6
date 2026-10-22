@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Analisis · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<section class="kepala">
+  <div>
+    <p class="eyebrow">Analisis komoditas</p>
+    <h1>Analisis harga {{ komoditas or '' }}</h1>
+    <p class="sub">Statistik harga per kota, rata-rata bulanan, dan selisih harga antar kota untuk satu komoditas dalam periode tertentu.</p>
+  </div>
+</section>
+
+{% if not komoditas %}
+  <div class="kosong-besar"><p>Belum ada data harga untuk dianalisis.</p></div>
+{% else %}
+  <div class="kartu filter">
+    <form method="get" data-ajax class="field">
+      <input type="hidden" name="periode" value="{{ periode }}">
+      <label for="komoditas">Komoditas</label>
+      <select id="komoditas" name="komoditas">
+        {% for k in komoditas_list %}<option value="{{ k }}" {{ 'selected' if k == komoditas }}>{{ k }}</option>{% endfor %}
+      </select>
+      <noscript><button class="btn btn-kecil">Tampilkan</button></noscript>
+    </form>
+    <div class="field">
+      <span class="label-teks">Periode</span>
+      <div class="segmen" role="group" aria-label="Periode">
+        {% for p in [90, 180, 365] %}
+          <a href="{{ url_dengan(periode=p) }}" class="{{ 'aktif' if p == periode }}" data-ajax>{{ p }} hari</a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <section class="stat-grid seksi">
+    <div class="stat">
+      <span class="stat-label">Rata-rata harga</span>
+      <span class="stat-angka kecil">{{ ringkas.rata|rupiah }}</span>
+      <span class="stat-ket">semua kota, {{ periode }} hari terakhir</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Harga tertinggi</span>
+      <span class="stat-angka kecil merah">{{ ringkas.puncak.harga|rupiah }}</span>
+      <span class="stat-ket">{{ ringkas.puncak.wilayah }}, {{ ringkas.puncak.tanggal|tgl }}</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Harga terendah</span>
+      <span class="stat-angka kecil">{{ ringkas.lembah.harga|rupiah }}</span>
+      <span class="stat-ket">{{ ringkas.lembah.wilayah }}, {{ ringkas.lembah.tanggal|tgl }}</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Selisih antar kota saat ini</span>
+      {% if disparitas %}
+        <span class="stat-angka kecil">{{ disparitas.persen|persen(false) }}</span>
+        <span class="stat-ket">{{ disparitas.mahal.wilayah }} lebih mahal {{ disparitas.selisih|rupiah }} dari {{ disparitas.murah.wilayah }}</span>
+      {% else %}
+        <span class="stat-angka kecil">-</span>
+        <span class="stat-ket">butuh data minimal 2 kota</span>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="seksi">
+    <div class="seksi-kepala">
+      <div>
+        <h2>Statistik per kota</h2>
+        <p>Ringkasan harga {{ komoditas }} di setiap kota selama {{ periode }} hari terakhir.</p>
+      </div>
+    </div>
+    <div class="tabel-wrap">
+      <table>
+        <thead>
+          <tr><th>Kota</th><th class="angka">Sekarang</th><th class="angka">Rata-rata</th><th class="angka">Terendah</th>
+              <th class="angka">Tertinggi</th><th class="angka">Vs rata-rata</th><th class="angka">30 hari</th><th class="angka">Volatilitas</th></tr>
+        </thead>
+        <tbody>
+          {% for s in statistik %}
+            <tr>
+              <td><span class="titik-kota" style="background: {{ warna_kota(s.wilayah) }}"></span> {{ s.wilayah }}</td>
+              {% if s.sekarang %}
+                <td class="angka sel-harga">{{ s.sekarang|rupiah }}</td>
+                <td class="angka">{{ s.rata|rupiah }}</td>
+                <td class="angka">{{ s.min|rupiah }}<span class="dua-baris">{{ s.tgl_min|tgl }}</span></td>
+                <td class="angka">{{ s.max|rupiah }}<span class="dua-baris">{{ s.tgl_max|tgl }}</span></td>
+                <td class="angka ubah {{ kelas_ubah(s.posisi) }}">{{ s.posisi|persen }}</td>
+                <td class="angka ubah {{ kelas_ubah(s.ubah30) }}">{{ s.ubah30|persen }}</td>
+                <td class="angka">{{ s.cv|persen(false) }}</td>
+              {% else %}
+                <td colspan="7" class="catatan">Belum ada data</td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="cara-baca"><strong>Vs rata-rata</strong> menunjukkan posisi harga sekarang dibanding rata-rata periode ini. Nilai +15% berarti harga sedang 15% di atas biasanya. <strong>Volatilitas</strong> makin besar berarti harganya makin sering naik-turun.</p>
+  </section>
+
+  <section class="seksi">
+    <div class="seksi-kepala">
+      <div>
+        <h2>Rata-rata harga per bulan</h2>
+        <p>Membandingkan harga rata-rata setiap bulan di tiga kota.</p>
+      </div>
+    </div>
+    <div class="kartu">
+      <div class="grafik"><canvas id="grafikBulanan" data-jenis="bulanan" data-sumber="data-grafikBulanan" aria-label="Grafik rata-rata harga per bulan"></canvas></div>
+      <script type="application/json" id="data-grafikBulanan">{{ bulanan|tojson }}</script>
+      <p class="cara-baca"><strong>Cara membaca:</strong> setiap kelompok batang adalah satu bulan, dan setiap warna adalah satu kota. Batang yang makin tinggi dari bulan ke bulan menunjukkan harga yang terus naik.</p>
+    </div>
+  </section>
+
+  {% if grafik_disp %}
+  <section class="seksi">
+    <div class="seksi-kepala">
+      <div>
+        <h2>Selisih harga antar kota</h2>
+        <p>Persentase selisih antara kota termahal dan termurah setiap hari.</p>
+      </div>
+    </div>
+    <div class="kartu">
+      <div class="grafik kecil"><canvas id="grafikDisparitas" data-jenis="disparitas" data-sumber="data-grafikDisparitas" aria-label="Grafik selisih harga antar kota"></canvas></div>
+      <script type="application/json" id="data-grafikDisparitas">{{ grafik_disp|tojson }}</script>
+      <p class="cara-baca"><strong>Cara membaca:</strong> makin tinggi garisnya, makin jauh perbedaan harga antar kota pada hari itu. Selisih yang besar bisa menandakan pasokan yang tidak merata antar kota.</p>
+    </div>
+  </section>
+  {% endif %}
+{% endif %}
+{% endblock %}

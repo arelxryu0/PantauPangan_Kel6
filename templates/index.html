@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block content %}
+{% if kosong %}
+  <section class="kosong-besar">
+    <h1>Belum ada data harga</h1>
+    <p>Impor data harga harian dari PIHPS Bank Indonesia untuk Pekanbaru, Dumai, dan Tembilahan agar beranda bisa menampilkan papan harga.</p>
+    <a class="btn" href="{{ url_for('admin') }}#data">Impor data</a>
+  </section>
+{% else %}
+
+<section class="kepala">
+  <div>
+    <p class="eyebrow">Data terakhir {{ stat.tanggal|tgl }}</p>
+    <h1>Harga pangan strategis di Riau</h1>
+    <p class="sub">Pantau harga harian pasar tradisional di kota yang dicatat PIHPS, lihat peluang lonjakan harga, dan perkiraan harga tujuh hari ke depan dari model AutoGluon.</p>
+  </div>
+</section>
+
+<section class="stat-grid" aria-label="Ringkasan">
+  <div class="stat">
+    <span class="stat-label">Komoditas dipantau</span>
+    <span class="stat-angka">{{ stat.komoditas }}</span>
+    <span class="stat-ket">di {{ stat.kota }} kota</span>
+  </div>
+  <a class="stat stat-link" href="{{ url_for('peringatan', status='Siaga') }}">
+    <span class="stat-label">Status siaga</span>
+    <span class="stat-angka {{ 'merah' if stat.siaga }}">{{ stat.siaga }}</span>
+    <span class="stat-ket">{{ 'kota-komoditas' if stat.ada_model else 'model belum dilatih' }}</span>
+  </a>
+  <a class="stat stat-link" href="{{ url_for('peringatan', status='Waspada') }}">
+    <span class="stat-label">Status waspada</span>
+    <span class="stat-angka {{ 'kuning' if stat.waspada }}">{{ stat.waspada }}</span>
+    <span class="stat-ket">{{ 'kota-komoditas' if stat.ada_model else 'model belum dilatih' }}</span>
+  </a>
+  <a class="stat stat-link" href="{{ url_for('risiko') }}">
+    <span class="stat-label">Peluang naik ≥ {{ cfg.PELUANG_WASPADA|int }}%</span>
+    <span class="stat-angka {{ 'merah' if stat.peluang_tinggi }}">{{ stat.peluang_tinggi }}</span>
+    <span class="stat-ket">{{ 'kota-komoditas' if stat.ada_model else 'model belum dilatih' }}</span>
+  </a>
+</section>
+
+<!-- ========== Papan harga ========== -->
+<section class="seksi" id="papan">
+  <div class="seksi-kepala">
+    <div>
+      <h2>Papan harga {{ komoditas }}</h2>
+      <p>Harga terakhir di tiap kota, perubahan sekitar 7 hari, dan peluang naik dari AutoGluon.</p>
+    </div>
+    <form method="get" class="filter-inline" data-ajax>
+      <input type="hidden" name="rentang" value="{{ rentang }}">
+      <input type="hidden" name="kota" value="{{ kota }}">
+      <label class="sr-only" for="komoditas">Komoditas</label>
+      <select id="komoditas" name="komoditas">
+        {% for k in komoditas_list %}<option value="{{ k }}" {{ 'selected' if k == komoditas }}>{{ k }}</option>{% endfor %}
+      </select>
+      <noscript><button class="btn btn-kecil">Tampilkan</button></noscript>
+    </form>
+  </div>
+
+  <div class="papan">
+    {% for p in papan %}
+      <a class="petak {{ p.status|lower if p.status in ['Siaga', 'Waspada'] }}"
+         href="{{ url_for('peramalan', komoditas=komoditas, wilayah=p.wilayah) }}">
+        <div class="petak-atas">
+          <span class="nama"><span class="titik-kota" style="background: {{ warna_kota(p.wilayah) }}"></span> {{ p.wilayah }}</span>
+          {% if p.status in ['Siaga', 'Waspada'] %}<span class="lencana {{ kelas_label(p.status) }}">{{ p.status }}</span>{% endif %}
+        </div>
+        {% if p.harga is not none %}
+          <span class="harga">{{ p.harga|rupiah }}</span>
+          <span class="ubah {{ kelas_ubah(p.perubahan) }}">{{ p.perubahan|persen }} dalam 7 hari</span>
+          <div class="spark"><canvas data-spark='{{ p.spark|tojson }}' aria-hidden="true"></canvas></div>
+          <div class="petak-bawah">
+            {% if p.peluang is not none %}
+              <span class="lencana {{ kelas_label(p.kategori) }}">Peluang naik {{ p.peluang|persen(false, 0) }}</span>
+            {% else %}<span class="catatan">Model belum dilatih</span>{% endif %}
+            <span class="catatan">{{ p.tanggal|tgl }}</span>
+          </div>
+        {% else %}
+          <span class="kosong">Belum ada data</span>
+        {% endif %}
+      </a>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ========== Grafik antar kota ========== -->
+<section class="seksi" id="grafik">
+  <div class="seksi-kepala">
+    <div>
+      <h2>Perbandingan harga antar kota</h2>
+      <p>Pergerakan harga {{ komoditas }} di Pekanbaru, Dumai, dan Tembilahan.</p>
+    </div>
+    <div class="segmen" role="group" aria-label="Rentang waktu">
+      {% for r in rentang_list %}
+        <a href="{{ url_dengan(rentang=r) }}" class="{{ 'aktif' if r == rentang }}" data-ajax>{{ 'Semua' if r == 0 else ('1 tahun' if r == 365 else r ~ ' hari') }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="kartu">
+    <div class="grafik"><canvas id="grafikKota" data-jenis="harga-kota" data-sumber="data-grafikKota" aria-label="Grafik perbandingan harga antar kota"></canvas></div>
+    <script type="application/json" id="data-grafikKota">{{ grafik|tojson }}</script>
+    <p class="cara-baca"><strong>Cara membaca:</strong> garis yang lebih tinggi berarti kota itu lebih mahal. Garis yang menanjak berarti harga sedang naik. Arahkan kursor ke grafik untuk melihat harga di tanggal tertentu.</p>
+  </div>
+</section>
+
+<!-- ========== Kondisi per kota ========== -->
+<section class="seksi" id="kota">
+  <div class="seksi-kepala">
+    <div>
+      <h2>Kondisi semua komoditas di {{ kota }}</h2>
+      <p>Harga terakhir, perubahan 7 dan 30 hari, peluang naik, dan status peringatan.</p>
+    </div>
+    <div class="pilih-kota" role="group" aria-label="Pilih kota">
+      {% for w in wilayah_list %}
+        <a href="{{ url_dengan(kota=w) }}" class="{{ 'aktif' if w == kota }}" data-ajax>
+          <span class="titik-kota" style="background: {{ warna_kota(w) }}"></span>{{ w }}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="tabel-wrap">
+    <table>
+      <thead>
+        <tr><th>Komoditas</th><th class="angka">Harga</th><th class="angka">7 hari</th><th class="angka">30 hari</th><th class="angka">Peluang naik</th><th>Peringatan</th></tr>
+      </thead>
+      <tbody>
+        {% for r in detail_kota %}
+          <tr class="{{ 'baris-aktif' if r.komoditas == komoditas }}">
+            <td><a href="{{ url_for('peramalan', komoditas=r.komoditas, wilayah=kota) }}">{{ r.komoditas }}</a></td>
+            <td class="angka sel-harga">{{ r.harga|rupiah }}</td>
+            <td class="angka ubah {{ kelas_ubah(r.perubahan) }}">{{ r.perubahan|persen }}</td>
+            <td class="angka ubah {{ kelas_ubah(r.perubahan30) }}">{{ r.perubahan30|persen }}</td>
+            <td class="angka">{% if r.peluang is not none %}<span class="meter"><span class="meter-isi {{ kelas_peluang(r.peluang) }}" style="width: {{ r.peluang|round(0) }}%"></span></span>{{ r.peluang|persen(false, 0) }}{% else %}<span class="catatan">-</span>{% endif %}</td>
+            <td>{% if r.status %}<span class="lencana {{ kelas_label(r.status) }}">{{ r.status }}</span>{% else %}<span class="catatan">Belum dilatih</span>{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="catatan">Belum ada data untuk {{ kota }}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ========== Naik / turun / peluang ========== -->
+<section class="seksi tiga-kolom">
+  <div>
+    <div class="seksi-kepala"><div><h2>Naik paling tinggi</h2><p>Perubahan 7 hari terakhir.</p></div></div>
+    <div class="kartu daftar-gerak">
+      {% for r in naik %}
+        <a href="{{ url_dengan(komoditas=r.komoditas) }}" class="gerak" data-ajax data-gulir="#papan">
+          <span><strong>{{ r.komoditas }}</strong><small>{{ r.wilayah }} · {{ r.harga|rupiah }}</small></span>
+          <span class="ubah naik">{{ r.perubahan|persen }}</span>
+        </a>
+      {% else %}
+        <p class="catatan">Tidak ada komoditas yang naik dalam 7 hari terakhir.</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div>
+    <div class="seksi-kepala"><div><h2>Turun paling dalam</h2><p>Perubahan 7 hari terakhir.</p></div></div>
+    <div class="kartu daftar-gerak">
+      {% for r in turun %}
+        <a href="{{ url_dengan(komoditas=r.komoditas) }}" class="gerak" data-ajax data-gulir="#papan">
+          <span><strong>{{ r.komoditas }}</strong><small>{{ r.wilayah }} · {{ r.harga|rupiah }}</small></span>
+          <span class="ubah turun">{{ r.perubahan|persen }}</span>
+        </a>
+      {% else %}
+        <p class="catatan">Tidak ada komoditas yang turun dalam 7 hari terakhir.</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div>
+    <div class="seksi-kepala"><div><h2>Peluang naik tertinggi</h2><p>Hasil AutoGluon untuk 7 hari ke depan.</p></div></div>
+    <div class="kartu daftar-gerak">
+      {% for r in peluang_teratas %}
+        <a href="{{ url_for('peramalan', komoditas=r.komoditas, wilayah=r.wilayah) }}" class="gerak">
+          <span><strong>{{ r.komoditas }}</strong><small>{{ r.wilayah }} · {{ r.harga|rupiah }}</small></span>
+          <span class="lencana {{ kelas_label(r.kategori) }}">{{ r.peluang|persen(false, 0) }}</span>
+        </a>
+      {% else %}
+        <p class="catatan">Model AutoGluon belum dilatih.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- ========== Semua komoditas ========== -->
+<section class="seksi">
+  <div class="seksi-kepala">
+    <div>
+      <h2>Harga semua komoditas</h2>
+      <p>Harga terakhir per kota. Klik nama komoditas untuk menampilkannya di papan harga.</p>
+    </div>
+    <div class="filter-inline">
+      <label class="sr-only" for="cari">Cari komoditas</label>
+      <input id="cari" type="search" placeholder="Cari komoditas..." data-cari="#tabelMatriks">
+    </div>
+  </div>
+  <div class="tabel-wrap">
+    <table id="tabelMatriks">
+      <thead>
+        <tr><th>Komoditas</th>{% for w in wilayah_list %}<th class="angka">{{ w }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for m in matriks %}
+          <tr class="{{ 'baris-aktif' if m.komoditas == komoditas }}">
+            <td><a href="{{ url_dengan(komoditas=m.komoditas) }}" data-ajax data-gulir="#papan">{{ m.komoditas }}</a></td>
+            {% for c in m.kota %}
+              <td class="angka">
+                {% if c %}
+                  <span class="sel-harga">{{ c.harga|rupiah }}</span>
+                  <span class="ubah kecil {{ kelas_ubah(c.perubahan) }}">{{ c.perubahan|persen }}</span>
+                {% else %}<span class="catatan">-</span>{% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Tentang · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<section class="kepala">
+  <div>
+    <p class="eyebrow">Tentang sistem</p>
+    <h1>Cara kerja Pantau Pangan Riau</h1>
+    <p class="sub">Sistem ini mengolah data harga harian PIHPS Bank Indonesia dengan AutoML AutoGluon untuk meramalkan harga, menghitung peluang lonjakan harga, dan memberi peringatan dini.</p>
+  </div>
+</section>
+
+<section class="alur" aria-label="Alur sistem">
+  <div class="langkah"><span class="nomor">1</span><h3>Impor data</h3><p>Admin mengunggah file Excel harga harian PIHPS untuk tiap kota.</p></div>
+  <div class="langkah"><span class="nomor">2</span><h3>Penyiapan data</h3><p>Angka dirapikan dan hari libur diisi harga hari kerja terakhir supaya tidak ada informasi masa depan yang bocor.</p></div>
+  <div class="langkah"><span class="nomor">3</span><h3>Peramalan</h3><p>AutoGluon TimeSeriesPredictor meramal harga {{ cfg.HORIZON }} hari ke depan beserta rentangnya.</p></div>
+  <div class="langkah"><span class="nomor">4</span><h3>Deteksi lonjakan</h3><p>AutoGluon TabularPredictor menghitung peluang harga naik ≥ {{ cfg.AMBANG_LONJAKAN|int }}% dalam {{ cfg.HORIZON }} hari.</p></div>
+  <div class="langkah"><span class="nomor">5</span><h3>Peringatan</h3><p>Kedua hasil digabung menjadi status Aman, Waspada, atau Siaga.</p></div>
+</section>
+
+<section class="seksi dua-kolom">
+  <div class="kartu teks">
+    <h2>Sumber data</h2>
+    <p>Data berasal dari Pusat Informasi Harga Pangan Strategis (PIHPS) Nasional yang dikelola Bank Indonesia, khusus harga pasar tradisional. Untuk Provinsi Riau, PIHPS mencatat harga di {{ wilayah_list|join(', ') }}.</p>
+    <p>Komoditas yang dipantau antara lain beras, daging ayam, daging sapi, telur ayam, bawang merah, bawang putih, cabai merah, cabai rawit, minyak goreng, dan gula pasir.</p>
+  </div>
+  <div class="kartu teks">
+    <h2>Apa itu AutoGluon?</h2>
+    <p>AutoGluon adalah kerangka AutoML (automated machine learning) sumber terbuka dari Amazon. AutoGluon tidak memakai satu algoritma saja, melainkan melatih banyak model sekaligus, membandingkannya pada data validasi, lalu menggabungkan model terbaik menjadi <em>weighted ensemble</em>.</p>
+    <p>Pendekatan ini dipilih karena biasanya lebih akurat dan lebih stabil dibanding satu model yang disetel manual, seperti LSTM atau K-Means.</p>
+  </div>
+  <div class="kartu teks">
+    <h2>Peramalan: TimeSeriesPredictor</h2>
+    <p>Semua kota-komoditas dilatih sekaligus dalam satu proses. Model yang dicoba antara lain:</p>
+    <ul>
+      <li><strong>Chronos-2</strong> dan <strong>Toto-2</strong>: foundation model deret waktu berbasis transformer yang sudah dilatih dengan jutaan deret waktu.</li>
+      <li><strong>ETS</strong> dan <strong>Theta</strong>: model statistik klasik.</li>
+      <li><strong>RecursiveTabular</strong> dan <strong>DirectTabular</strong>: LightGBM untuk deret waktu.</li>
+    </ul>
+    <p>{{ cfg.HORIZON }} hari terakhir disembunyikan untuk menguji akurasi (MAPE dan RMSE). Ramalan dilengkapi rentang kuantil 10%–90%.</p>
+  </div>
+  <div class="kartu teks">
+    <h2>Deteksi lonjakan: TabularPredictor</h2>
+    <p>Klasifikasi biner yang menjawab: <em>apakah harga tertinggi {{ cfg.HORIZON }} hari ke depan naik ≥ {{ cfg.AMBANG_LONJAKAN|int }}% dari harga hari ini?</em></p>
+    <ul>
+      <li><strong>Fitur:</strong> perubahan harga 1, 7, 14, dan 30 hari, volatilitas 14 dan 30 hari, posisi terhadap rata-rata 30 hari, bulan, hari, kota, dan komoditas.</li>
+      <li><strong>Model:</strong> LightGBM, CatBoost, XGBoost, Random Forest, Extra Trees, dan neural network, digabung menjadi weighted ensemble.</li>
+      <li><strong>Evaluasi:</strong> data dibagi menurut waktu (latih, validasi, uji 60 hari terakhir) dan diukur dengan balanced accuracy, recall, precision, F1, dan ROC AUC.</li>
+    </ul>
+  </div>
+  <div class="kartu teks">
+    <h2>Status peringatan dini</h2>
+    <ul>
+      <li><span class="lencana l-rawan">Siaga</span> ramalan naik ≥ 2× ambang, atau peluang naik ≥ {{ cfg.PELUANG_SIAGA|int }}%.</li>
+      <li><span class="lencana l-fluktuatif">Waspada</span> ramalan naik ≥ ambang, atau peluang naik ≥ {{ cfg.PELUANG_WASPADA|int }}%.</li>
+      <li><span class="lencana l-stabil">Aman</span> keduanya di bawah batas.</li>
+    </ul>
+    <p>Ambang kenaikan default {{ cfg.AMBANG_DEFAULT|int }}% dan bisa diatur admin per komoditas.</p>
+  </div>
+  <div class="kartu teks">
+    <h2>Batasan</h2>
+    <p>Model hanya belajar dari pola harga sebelumnya. Kejadian di luar data, seperti gagal panen, bencana, atau kebijakan baru, tidak diketahui model. Hasil sistem adalah alat bantu pemantauan, sedangkan keputusan intervensi harga tetap menjadi wewenang instansi terkait.</p>
+  </div>
+</section>
+{% endblock %}

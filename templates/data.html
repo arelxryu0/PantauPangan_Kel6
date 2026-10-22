@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Data Harga · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<section class="kepala">
+  <div>
+    <p class="eyebrow">Data mentah</p>
+    <h1>Data harga harian</h1>
+    <p class="sub">Seluruh harga yang sudah diimpor dari PIHPS. Saring berdasarkan komoditas, kota, atau tanggal, lalu unduh hasilnya sebagai CSV.</p>
+  </div>
+  <div class="aksi">
+    <a class="btn btn-garis" href="{{ url_for('ekspor_harga', **f) }}">Unduh CSV</a>
+  </div>
+</section>
+
+<form class="kartu filter" method="get" data-ajax>
+  <div class="field">
+    <label for="komoditas">Komoditas</label>
+    <select id="komoditas" name="komoditas">
+      <option value="">Semua komoditas</option>
+      {% for k in komoditas_list %}<option value="{{ k }}" {{ 'selected' if k == f.komoditas }}>{{ k }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="wilayah">Kota</label>
+    <select id="wilayah" name="wilayah">
+      <option value="">Semua kota</option>
+      {% for w in wilayah_list %}<option {{ 'selected' if w == f.wilayah }}>{{ w }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="dari">Dari tanggal</label>
+    <input id="dari" type="date" name="dari" value="{{ f.dari }}">
+  </div>
+  <div class="field">
+    <label for="sampai">Sampai tanggal</label>
+    <input id="sampai" type="date" name="sampai" value="{{ f.sampai }}">
+  </div>
+  <div class="field tombol">
+    <button class="btn" type="submit">Terapkan</button>
+    <a class="btn btn-teks" href="{{ url_for('data_harga') }}" data-ajax>Reset</a>
+  </div>
+</form>
+
+<p class="catatan jarak">{{ total|ribuan }} baris data · halaman {{ halaman }} dari {{ jumlah_halaman }}</p>
+
+{% if rows %}
+  <div class="tabel-wrap">
+    <table>
+      <thead><tr><th>Tanggal</th><th>Kota</th><th>Komoditas</th><th class="angka">Harga</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>{{ r.tanggal|tgl }}</td>
+            <td>{{ r.wilayah }}</td>
+            <td><a href="{{ url_for('dashboard', komoditas=r.komoditas) }}">{{ r.komoditas }}</a></td>
+            <td class="angka">{{ r.harga|rupiah }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if jumlah_halaman > 1 %}
+    <nav class="halaman" aria-label="Navigasi halaman">
+      {% if halaman > 1 %}<a href="{{ url_dengan(halaman=halaman - 1) }}" data-ajax>‹ Sebelumnya</a>{% else %}<span class="mati">‹ Sebelumnya</span>{% endif %}
+      {% for n in range([1, halaman - 2]|max, [jumlah_halaman, halaman + 2]|min + 1) %}
+        {% if n == halaman %}<span class="aktif">{{ n }}</span>{% else %}<a href="{{ url_dengan(halaman=n) }}" data-ajax>{{ n }}</a>{% endif %}
+      {% endfor %}
+      {% if halaman < jumlah_halaman %}<a href="{{ url_dengan(halaman=halaman + 1) }}" data-ajax>Berikutnya ›</a>{% else %}<span class="mati">Berikutnya ›</span>{% endif %}
+    </nav>
+  {% endif %}
+{% else %}
+  <div class="kosong-besar"><p>Tidak ada data untuk filter ini.</p></div>
+{% endif %}
+{% endblock %}
