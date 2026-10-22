@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Logo Pantau Pangan Riau">
+  <rect width="64" height="64" rx="15" fill="#E0A126"/>
+  <path d="M9 50 L19 43 L26 46 L34 38" fill="none" stroke="#FFF4D6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
+  <path d="M43 57 C43 44 44 30 47 12" fill="none" stroke="#17402F" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="38.5" cy="44" rx="3.3" ry="6.2" transform="rotate(-35 38.5 44)" fill="#17402F"/>
+  <ellipse cx="48.5" cy="41.5" rx="3.3" ry="6.2" transform="rotate(35 48.5 41.5)" fill="#17402F"/>
+  <ellipse cx="39.8" cy="33" rx="3.3" ry="6.2" transform="rotate(-35 39.8 33)" fill="#17402F"/>
+  <ellipse cx="49.6" cy="30.5" rx="3.3" ry="6.2" transform="rotate(35 49.6 30.5)" fill="#17402F"/>
+  <ellipse cx="41.4" cy="22.5" rx="3.3" ry="6.2" transform="rotate(-35 41.4 22.5)" fill="#17402F"/>
+  <ellipse cx="50.8" cy="20" rx="3.3" ry="6.2" transform="rotate(35 50.8 20)" fill="#17402F"/>
+  <ellipse cx="47.6" cy="10" rx="3.1" ry="6" transform="rotate(8 47.6 10)" fill="#17402F"/>
+  <circle cx="34" cy="38" r="3.4" fill="#B83227" stroke="#FFF4D6" stroke-width="1.6"/>
+</svg>
