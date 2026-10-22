@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Masuk Admin · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<div class="login-box">
+  <div class="kartu">
+    <img class="brand-logo besar" src="{{ url_for('static', filename='img/logo.svg') }}" alt="" width="52" height="52">
+    <h1>Masuk admin</h1>
+    <p class="sub">Khusus tim pemantau harga untuk mengimpor data dan menjalankan model.</p>
+    <form method="post">
+      <div class="field"><label for="username">Username</label><input id="username" name="username" type="text" required autofocus autocomplete="username"></div>
+      <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required autocomplete="current-password"></div>
+      <button class="btn penuh" type="submit">Masuk</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

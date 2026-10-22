@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Pantau Pangan Riau{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/logo.svg') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/logo-192.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script>document.documentElement.classList.add('js');</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</head>
+<body>
+{% set ep = request.endpoint %}
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <img class="brand-logo" src="{{ url_for('static', filename='img/logo.svg') }}" alt="" width="40" height="40">
+      <span class="brand-teks">Pantau Pangan Riau<small>Monitoring harga pangan berbasis AutoML</small></span>
+    </a>
+    <nav class="nav" aria-label="Menu utama">
+      <a href="{{ url_for('dashboard') }}" class="{{ 'aktif' if ep == 'dashboard' }}">Beranda</a>
+      <a href="{{ url_for('analisis') }}" class="{{ 'aktif' if ep == 'analisis' }}">Analisis</a>
+      <a href="{{ url_for('data_harga') }}" class="{{ 'aktif' if ep == 'data_harga' }}">Data Harga</a>
+      <a href="{{ url_for('risiko') }}" class="{{ 'aktif' if ep == 'risiko' }}">Risiko Kenaikan</a>
+      <a href="{{ url_for('peramalan') }}" class="{{ 'aktif' if ep == 'peramalan' }}">Peramalan</a>
+      <a href="{{ url_for('peringatan') }}" class="{{ 'aktif' if ep == 'peringatan' }}">Peringatan Dini{% if jumlah_peringatan_aktif %}<span class="hitung" title="Kota-komoditas berstatus Waspada atau Siaga">{{ jumlah_peringatan_aktif }}</span>{% endif %}</a>
+      <a href="{{ url_for('evaluasi') }}" class="{{ 'aktif' if ep == 'evaluasi' }}">Evaluasi Model</a>
+      <a href="{{ url_for('tentang') }}" class="{{ 'aktif' if ep == 'tentang' }}">Tentang</a>
+    </nav>
+    <div class="akun">
+      {% if session.user %}
+        <a class="btn btn-kecil btn-terang" href="{{ url_for('admin') }}">{% if latih_berjalan %}<span class="titik-jalan" aria-hidden="true"></span>Melatih model{% else %}Kelola Data{% endif %}</a>
+        <a class="link-keluar" href="{{ url_for('logout') }}">Keluar</a>
+      {% else %}
+        <a class="btn btn-kecil btn-terang" href="{{ url_for('login') }}">Masuk Admin</a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<main class="wrap konten">
+  {% with pesan = get_flashed_messages(with_categories=true) %}
+    {% if pesan %}
+      <div class="daftar-pesan">
+        {% for kategori, isi in pesan %}
+          <div class="pesan {{ kategori }}" role="status">{{ isi }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <div>
+      <strong>Pantau Pangan Riau</strong>
+      <p>Sumber data: PIHPS Nasional, Bank Indonesia (pasar tradisional Pekanbaru, Dumai, dan Tembilahan). Peramalan dan deteksi lonjakan harga menggunakan AutoML AutoGluon. Hasil model adalah perkiraan berdasarkan pola harga sebelumnya, bukan kepastian harga.</p>
+    </div>
+    <nav aria-label="Menu bawah">
+      <a href="{{ url_for('data_harga') }}">Data Harga</a>
+      <a href="{{ url_for('evaluasi') }}">Evaluasi Model</a>
+      <a href="{{ url_for('tentang') }}">Metode</a>
+    </nav>
+  </div>
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

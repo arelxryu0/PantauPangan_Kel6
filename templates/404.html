@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Halaman tidak ditemukan · Pantau Pangan Riau{% endblock %}
+{% block content %}
+<div class="kosong-besar">
+  <h1>Halaman tidak ditemukan</h1>
+  <p>Alamat yang kamu buka tidak ada. Kembali ke beranda untuk melihat papan harga.</p>
+  <a class="btn" href="{{ url_for('dashboard') }}">Ke beranda</a>
+</div>
+{% endblock %}
